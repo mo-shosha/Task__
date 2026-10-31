@@ -540,6 +540,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-categories"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "cornucopia",
+ "deadpool-postgres",
+ "serde",
+ "shared",
+]
+
+[[package]]
+name = "module-images"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "cornucopia",
+ "deadpool-postgres",
+ "serde",
+ "shared",
+]
+
+[[package]]
+name = "module-products"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "cornucopia",
+ "deadpool-postgres",
+ "serde",
+ "shared",
+]
+
+[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -653,6 +686,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "fallible-iterator",
+ "getrandom",
  "hmac",
  "md-5",
  "memchr",
@@ -687,10 +721,11 @@ name = "products"
 version = "0.1.0"
 dependencies = [
  "axum",
- "cornucopia",
  "deadpool-postgres",
- "serde",
- "serde_json",
+ "module-categories",
+ "module-images",
+ "module-products",
+ "shared",
  "tokio",
  "tokio-postgres",
 ]
@@ -829,6 +864,13 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+dependencies = [
+ "axum",
 ]
 
 [[package]]

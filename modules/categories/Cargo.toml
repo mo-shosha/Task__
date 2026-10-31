@@ -1,0 +1,11 @@
+[package]
+name = "module-categories"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+serde.workspace = true
+deadpool-postgres.workspace = true
+cornucopia.workspace = true
+shared.workspace = true

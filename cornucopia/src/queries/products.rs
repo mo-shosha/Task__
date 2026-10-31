@@ -56,6 +56,8 @@ pub struct GetProducts {
     pub price: i64,
     pub description: String,
     pub category_id: i64,
+    pub category_name: String,
+    pub primary_image_path: Option<String>,
 }
 pub struct GetProductsBorrowed<'a> {
     pub id: i64,
@@ -63,6 +65,8 @@ pub struct GetProductsBorrowed<'a> {
     pub price: i64,
     pub description: &'a str,
     pub category_id: i64,
+    pub category_name: &'a str,
+    pub primary_image_path: Option<&'a str>,
 }
 impl<'a> From<GetProductsBorrowed<'a>> for GetProducts {
     fn from(
@@ -72,6 +76,8 @@ impl<'a> From<GetProductsBorrowed<'a>> for GetProducts {
             price,
             description,
             category_id,
+            category_name,
+            primary_image_path,
         }: GetProductsBorrowed<'a>,
     ) -> Self {
         Self {
@@ -80,6 +86,8 @@ impl<'a> From<GetProductsBorrowed<'a>> for GetProducts {
             price,
             description: description.into(),
             category_id,
+            category_name: category_name.into(),
+            primary_image_path: primary_image_path.map(|v| v.into()),
         }
     }
 }
@@ -90,6 +98,10 @@ pub struct GetProduct {
     pub price: i64,
     pub description: String,
     pub category_id: i64,
+    pub image_id: Option<i64>,
+    pub file_path: Option<String>,
+    pub is_primary: Option<bool>,
+    pub display_order: Option<i32>,
 }
 pub struct GetProductBorrowed<'a> {
     pub id: i64,
@@ -97,6 +109,10 @@ pub struct GetProductBorrowed<'a> {
     pub price: i64,
     pub description: &'a str,
     pub category_id: i64,
+    pub image_id: Option<i64>,
+    pub file_path: Option<&'a str>,
+    pub is_primary: Option<bool>,
+    pub display_order: Option<i32>,
 }
 impl<'a> From<GetProductBorrowed<'a>> for GetProduct {
     fn from(
@@ -106,6 +122,10 @@ impl<'a> From<GetProductBorrowed<'a>> for GetProduct {
             price,
             description,
             category_id,
+            image_id,
+            file_path,
+            is_primary,
+            display_order,
         }: GetProductBorrowed<'a>,
     ) -> Self {
         Self {
@@ -114,6 +134,10 @@ impl<'a> From<GetProductBorrowed<'a>> for GetProduct {
             price,
             description: description.into(),
             category_id,
+            image_id,
+            file_path: file_path.map(|v| v.into()),
+            is_primary,
+            display_order,
         }
     }
 }
@@ -554,7 +578,7 @@ impl<'c, 'a, 's, C: GenericClient, T1: crate::StringSql, T2: crate::StringSql>
 pub struct GetProductsStmt(&'static str, Option<tokio_postgres::Statement>);
 pub fn get_products() -> GetProductsStmt {
     GetProductsStmt(
-        "SELECT id, name, price, description, category_id FROM products ORDER BY id",
+        "SELECT p.id, p.name, p.price, p.description, p.category_id, c.name AS category_name, i.file_path AS primary_image_path FROM products p JOIN categories c ON p.category_id = c.id LEFT JOIN images i ON p.id = i.product_id AND i.is_primary = TRUE ORDER BY p.id",
         None,
     )
 }
@@ -583,6 +607,8 @@ impl GetProductsStmt {
                         price: row.try_get(2)?,
                         description: row.try_get(3)?,
                         category_id: row.try_get(4)?,
+                        category_name: row.try_get(5)?,
+                        primary_image_path: row.try_get(6)?,
                     })
                 },
             mapper: |it| GetProducts::from(it),
@@ -592,7 +618,7 @@ impl GetProductsStmt {
 pub struct GetProductStmt(&'static str, Option<tokio_postgres::Statement>);
 pub fn get_product() -> GetProductStmt {
     GetProductStmt(
-        "SELECT id, name, price, description, category_id FROM products WHERE id = $1",
+        "SELECT p.id, p.name, p.price, p.description, p.category_id, i.id AS image_id, i.file_path, i.is_primary, i.display_order FROM products p LEFT JOIN images i ON p.id = i.product_id WHERE p.id = $1 ORDER BY i.display_order, i.id",
         None,
     )
 }
@@ -622,6 +648,10 @@ impl GetProductStmt {
                         price: row.try_get(2)?,
                         description: row.try_get(3)?,
                         category_id: row.try_get(4)?,
+                        image_id: row.try_get(5)?,
+                        file_path: row.try_get(6)?,
+                        is_primary: row.try_get(7)?,
+                        display_order: row.try_get(8)?,
                     })
                 },
             mapper: |it| GetProduct::from(it),
