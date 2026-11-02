@@ -13,7 +13,11 @@ async fn main() {
         .with_state(pool.clone())
         .merge(module_categories::router(pool.clone()))
         .merge(module_products::router(pool.clone()))
-        .merge(module_images::router(pool));
+        .merge(module_images::router(pool.clone()))
+        .merge(module_authentication::router(
+            pool,
+            module_authentication::AuthConfig::from_env(),
+        ));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await

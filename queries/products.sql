@@ -3,7 +3,7 @@ INSERT INTO products (name, price, description, category_id)
 VALUES (:name, :price, :description, :category_id)
 RETURNING id, name, price, description, category_id;
 
---! get_products : (primary_image_path?)
+--! get_products (search?, category_id?, min_price?, max_price?) : (primary_image_path?)
 SELECT 
   p.id, p.name, p.price, p.description, p.category_id, c.name AS category_name, i.file_path AS primary_image_path
 FROM products p
@@ -12,7 +12,25 @@ JOIN categories c
 LEFT JOIN images i
     ON p.id = i.product_id
     AND i.is_primary = TRUE
-ORDER BY p.id;
+WHERE (:search::TEXT IS NULL
+        OR p.name ILIKE '%' || :search || '%'
+        OR p.description ILIKE '%' || :search || '%')
+  AND (:category_id::BIGINT IS NULL OR p.category_id = :category_id)
+  AND (:min_price::BIGINT IS NULL OR p.price >= :min_price)
+  AND (:max_price::BIGINT IS NULL OR p.price <= :max_price)
+ORDER BY p.id
+LIMIT :limit
+OFFSET :offset;
+
+--! count_products (search?, category_id?, min_price?, max_price?)
+SELECT COUNT(*) AS total
+FROM products p
+WHERE (:search::TEXT IS NULL
+        OR p.name ILIKE '%' || :search || '%'
+        OR p.description ILIKE '%' || :search || '%')
+  AND (:category_id::BIGINT IS NULL OR p.category_id = :category_id)
+  AND (:min_price::BIGINT IS NULL OR p.price >= :min_price)
+  AND (:max_price::BIGINT IS NULL OR p.price <= :max_price);
 
 --! get_product : (image_id?, file_path?, is_primary?, display_order?)
 SELECT

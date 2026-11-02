@@ -8,6 +8,22 @@ pub struct CreateProductParams<T1: crate::StringSql, T2: crate::StringSql> {
     pub category_id: i64,
 }
 #[derive(Debug)]
+pub struct GetProductsParams<T1: crate::StringSql> {
+    pub search: Option<T1>,
+    pub category_id: Option<i64>,
+    pub min_price: Option<i64>,
+    pub max_price: Option<i64>,
+    pub limit: i64,
+    pub offset: i64,
+}
+#[derive(Debug)]
+pub struct CountProductsParams<T1: crate::StringSql> {
+    pub search: Option<T1>,
+    pub category_id: Option<i64>,
+    pub min_price: Option<i64>,
+    pub max_price: Option<i64>,
+}
+#[derive(Debug)]
 pub struct UpdateProductParams<T1: crate::StringSql, T2: crate::StringSql> {
     pub name: T1,
     pub price: i64,
@@ -311,6 +327,70 @@ where
         Ok(mapped)
     }
 }
+pub struct I64Query<'c, 'a, 's, C: GenericClient, T, const N: usize> {
+    client: &'c C,
+    params: [&'a (dyn postgres_types::ToSql + Sync); N],
+    query: &'static str,
+    cached: Option<&'s tokio_postgres::Statement>,
+    extractor: fn(&tokio_postgres::Row) -> Result<i64, tokio_postgres::Error>,
+    mapper: fn(i64) -> T,
+}
+impl<'c, 'a, 's, C, T: 'c, const N: usize> I64Query<'c, 'a, 's, C, T, N>
+where
+    C: GenericClient,
+{
+    pub fn map<R>(self, mapper: fn(i64) -> R) -> I64Query<'c, 'a, 's, C, R, N> {
+        I64Query {
+            client: self.client,
+            params: self.params,
+            query: self.query,
+            cached: self.cached,
+            extractor: self.extractor,
+            mapper,
+        }
+    }
+    pub async fn one(self) -> Result<T, tokio_postgres::Error> {
+        let row =
+            crate::client::async_::one(self.client, self.query, &self.params, self.cached).await?;
+        Ok((self.mapper)((self.extractor)(&row)?))
+    }
+    pub async fn all(self) -> Result<Vec<T>, tokio_postgres::Error> {
+        self.iter().await?.try_collect().await
+    }
+    pub async fn opt(self) -> Result<Option<T>, tokio_postgres::Error> {
+        let opt_row =
+            crate::client::async_::opt(self.client, self.query, &self.params, self.cached).await?;
+        Ok(opt_row
+            .map(|row| {
+                let extracted = (self.extractor)(&row)?;
+                Ok((self.mapper)(extracted))
+            })
+            .transpose()?)
+    }
+    pub async fn iter(
+        self,
+    ) -> Result<
+        impl futures::Stream<Item = Result<T, tokio_postgres::Error>> + 'c,
+        tokio_postgres::Error,
+    > {
+        let stream = crate::client::async_::raw(
+            self.client,
+            self.query,
+            crate::slice_iter(&self.params),
+            self.cached,
+        )
+        .await?;
+        let mapped = stream
+            .map(move |res| {
+                res.and_then(|row| {
+                    let extracted = (self.extractor)(&row)?;
+                    Ok((self.mapper)(extracted))
+                })
+            })
+            .into_stream();
+        Ok(mapped)
+    }
+}
 pub struct GetProductQuery<'c, 'a, 's, C: GenericClient, T, const N: usize> {
     client: &'c C,
     params: [&'a (dyn postgres_types::ToSql + Sync); N],
@@ -445,70 +525,6 @@ where
         Ok(mapped)
     }
 }
-pub struct I64Query<'c, 'a, 's, C: GenericClient, T, const N: usize> {
-    client: &'c C,
-    params: [&'a (dyn postgres_types::ToSql + Sync); N],
-    query: &'static str,
-    cached: Option<&'s tokio_postgres::Statement>,
-    extractor: fn(&tokio_postgres::Row) -> Result<i64, tokio_postgres::Error>,
-    mapper: fn(i64) -> T,
-}
-impl<'c, 'a, 's, C, T: 'c, const N: usize> I64Query<'c, 'a, 's, C, T, N>
-where
-    C: GenericClient,
-{
-    pub fn map<R>(self, mapper: fn(i64) -> R) -> I64Query<'c, 'a, 's, C, R, N> {
-        I64Query {
-            client: self.client,
-            params: self.params,
-            query: self.query,
-            cached: self.cached,
-            extractor: self.extractor,
-            mapper,
-        }
-    }
-    pub async fn one(self) -> Result<T, tokio_postgres::Error> {
-        let row =
-            crate::client::async_::one(self.client, self.query, &self.params, self.cached).await?;
-        Ok((self.mapper)((self.extractor)(&row)?))
-    }
-    pub async fn all(self) -> Result<Vec<T>, tokio_postgres::Error> {
-        self.iter().await?.try_collect().await
-    }
-    pub async fn opt(self) -> Result<Option<T>, tokio_postgres::Error> {
-        let opt_row =
-            crate::client::async_::opt(self.client, self.query, &self.params, self.cached).await?;
-        Ok(opt_row
-            .map(|row| {
-                let extracted = (self.extractor)(&row)?;
-                Ok((self.mapper)(extracted))
-            })
-            .transpose()?)
-    }
-    pub async fn iter(
-        self,
-    ) -> Result<
-        impl futures::Stream<Item = Result<T, tokio_postgres::Error>> + 'c,
-        tokio_postgres::Error,
-    > {
-        let stream = crate::client::async_::raw(
-            self.client,
-            self.query,
-            crate::slice_iter(&self.params),
-            self.cached,
-        )
-        .await?;
-        let mapped = stream
-            .map(move |res| {
-                res.and_then(|row| {
-                    let extracted = (self.extractor)(&row)?;
-                    Ok((self.mapper)(extracted))
-                })
-            })
-            .into_stream();
-        Ok(mapped)
-    }
-}
 pub struct CreateProductStmt(&'static str, Option<tokio_postgres::Statement>);
 pub fn create_product() -> CreateProductStmt {
     CreateProductStmt(
@@ -578,7 +594,7 @@ impl<'c, 'a, 's, C: GenericClient, T1: crate::StringSql, T2: crate::StringSql>
 pub struct GetProductsStmt(&'static str, Option<tokio_postgres::Statement>);
 pub fn get_products() -> GetProductsStmt {
     GetProductsStmt(
-        "SELECT p.id, p.name, p.price, p.description, p.category_id, c.name AS category_name, i.file_path AS primary_image_path FROM products p JOIN categories c ON p.category_id = c.id LEFT JOIN images i ON p.id = i.product_id AND i.is_primary = TRUE ORDER BY p.id",
+        "SELECT p.id, p.name, p.price, p.description, p.category_id, c.name AS category_name, i.file_path AS primary_image_path FROM products p JOIN categories c ON p.category_id = c.id LEFT JOIN images i ON p.id = i.product_id AND i.is_primary = TRUE WHERE ($1::TEXT IS NULL OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%') AND ($2::BIGINT IS NULL OR p.category_id = $2) AND ($3::BIGINT IS NULL OR p.price >= $3) AND ($4::BIGINT IS NULL OR p.price <= $4) ORDER BY p.id LIMIT $5 OFFSET $6",
         None,
     )
 }
@@ -590,13 +606,19 @@ impl GetProductsStmt {
         self.1 = Some(client.prepare(self.0).await?);
         Ok(self)
     }
-    pub fn bind<'c, 'a, 's, C: GenericClient>(
+    pub fn bind<'c, 'a, 's, C: GenericClient, T1: crate::StringSql>(
         &'s self,
         client: &'c C,
-    ) -> GetProductsQuery<'c, 'a, 's, C, GetProducts, 0> {
+        search: &'a Option<T1>,
+        category_id: &'a Option<i64>,
+        min_price: &'a Option<i64>,
+        max_price: &'a Option<i64>,
+        limit: &'a i64,
+        offset: &'a i64,
+    ) -> GetProductsQuery<'c, 'a, 's, C, GetProducts, 6> {
         GetProductsQuery {
             client,
-            params: [],
+            params: [search, category_id, min_price, max_price, limit, offset],
             query: self.0,
             cached: self.1.as_ref(),
             extractor:
@@ -613,6 +635,89 @@ impl GetProductsStmt {
                 },
             mapper: |it| GetProducts::from(it),
         }
+    }
+}
+impl<'c, 'a, 's, C: GenericClient, T1: crate::StringSql>
+    crate::client::async_::Params<
+        'c,
+        'a,
+        's,
+        GetProductsParams<T1>,
+        GetProductsQuery<'c, 'a, 's, C, GetProducts, 6>,
+        C,
+    > for GetProductsStmt
+{
+    fn params(
+        &'s self,
+        client: &'c C,
+        params: &'a GetProductsParams<T1>,
+    ) -> GetProductsQuery<'c, 'a, 's, C, GetProducts, 6> {
+        self.bind(
+            client,
+            &params.search,
+            &params.category_id,
+            &params.min_price,
+            &params.max_price,
+            &params.limit,
+            &params.offset,
+        )
+    }
+}
+pub struct CountProductsStmt(&'static str, Option<tokio_postgres::Statement>);
+pub fn count_products() -> CountProductsStmt {
+    CountProductsStmt(
+        "SELECT COUNT(*) AS total FROM products p WHERE ($1::TEXT IS NULL OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%') AND ($2::BIGINT IS NULL OR p.category_id = $2) AND ($3::BIGINT IS NULL OR p.price >= $3) AND ($4::BIGINT IS NULL OR p.price <= $4)",
+        None,
+    )
+}
+impl CountProductsStmt {
+    pub async fn prepare<'a, C: GenericClient>(
+        mut self,
+        client: &'a C,
+    ) -> Result<Self, tokio_postgres::Error> {
+        self.1 = Some(client.prepare(self.0).await?);
+        Ok(self)
+    }
+    pub fn bind<'c, 'a, 's, C: GenericClient, T1: crate::StringSql>(
+        &'s self,
+        client: &'c C,
+        search: &'a Option<T1>,
+        category_id: &'a Option<i64>,
+        min_price: &'a Option<i64>,
+        max_price: &'a Option<i64>,
+    ) -> I64Query<'c, 'a, 's, C, i64, 4> {
+        I64Query {
+            client,
+            params: [search, category_id, min_price, max_price],
+            query: self.0,
+            cached: self.1.as_ref(),
+            extractor: |row| Ok(row.try_get(0)?),
+            mapper: |it| it,
+        }
+    }
+}
+impl<'c, 'a, 's, C: GenericClient, T1: crate::StringSql>
+    crate::client::async_::Params<
+        'c,
+        'a,
+        's,
+        CountProductsParams<T1>,
+        I64Query<'c, 'a, 's, C, i64, 4>,
+        C,
+    > for CountProductsStmt
+{
+    fn params(
+        &'s self,
+        client: &'c C,
+        params: &'a CountProductsParams<T1>,
+    ) -> I64Query<'c, 'a, 's, C, i64, 4> {
+        self.bind(
+            client,
+            &params.search,
+            &params.category_id,
+            &params.min_price,
+            &params.max_price,
+        )
     }
 }
 pub struct GetProductStmt(&'static str, Option<tokio_postgres::Statement>);

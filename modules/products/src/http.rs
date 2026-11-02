@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -8,18 +8,22 @@ use serde::{Deserialize, Serialize};
 use shared::{AppError, AppResult};
 
 use crate::{
-    domain::{Product, ProductDetails, ProductImage, ProductInput, ProductListItem},
+    domain::{
+        Pagination, Product, ProductDetails, ProductFilter, ProductImage, ProductInput,
+        ProductListItem,
+    },
     repository::ProductRepository,
 };
+
+const DEFAULT_PAGE_SIZE: i64 = 20;
+const MAX_PAGE_SIZE: i64 = 100;
 
 pub fn router(repository: ProductRepository) -> Router {
     Router::new()
         .route("/products", post(create_product).get(get_products))
         .route(
             "/products/{id}",
-            get(get_product)
-                .put(update_product)
-                .delete(delete_product),
+            get(get_product).put(update_product).delete(delete_product),
         )
         .with_state(repository)
 }
@@ -41,6 +45,25 @@ impl From<ProductRequest> for ProductInput {
             category_id: request.category_id,
         }
     }
+}
+
+#[derive(Deserialize)]
+struct ProductQuery {
+    search: Option<String>,
+    category_id: Option<i64>,
+    min_price: Option<i64>,
+    max_price: Option<i64>,
+    page: Option<i64>,
+    page_size: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct ProductPageResponse {
+    items: Vec<ProductListItemResponse>,
+    page: i64,
+    page_size: i64,
+    total_items: i64,
+    total_pages: i64,
 }
 
 #[derive(Serialize)]
@@ -128,10 +151,89 @@ async fn create_product(
 
 async fn get_products(
     State(repository): State<ProductRepository>,
-) -> AppResult<Json<Vec<ProductListItemResponse>>> {
-    let products = repository.list().await?;
+    Query(query): Query<ProductQuery>,
+) -> AppResult<Json<ProductPageResponse>> {
+    let pagination = build_pagination(&query)?;
+    let filter = build_filter(query)?;
 
-    Ok(Json(products.into_iter().map(Into::into).collect()))
+    let page = repository.list(&filter, &pagination).await?;
+
+    let total_pages = (page.total_items + pagination.page_size - 1) / pagination.page_size;
+
+    Ok(Json(ProductPageResponse {
+        items: page.items.into_iter().map(Into::into).collect(),
+        page: pagination.page,
+        page_size: pagination.page_size,
+        total_items: page.total_items,
+        total_pages,
+    }))
+}
+
+fn build_pagination(query: &ProductQuery) -> AppResult<Pagination> {
+    let page = query.page.unwrap_or(1);
+    let page_size = query.page_size.unwrap_or(DEFAULT_PAGE_SIZE);
+
+    if page < 1 {
+        return Err(AppError::Validation(
+            "page must be 1 or greater".to_string(),
+        ));
+    }
+
+    if page_size < 1 {
+        return Err(AppError::Validation(
+            "page_size must be 1 or greater".to_string(),
+        ));
+    }
+
+    if page_size > MAX_PAGE_SIZE {
+        return Err(AppError::Validation(format!(
+            "page_size cannot be greater than {MAX_PAGE_SIZE}"
+        )));
+    }
+
+    Ok(Pagination { page, page_size })
+}
+
+fn build_filter(query: ProductQuery) -> AppResult<ProductFilter> {
+    let mut search = None;
+    if let Some(text) = query.search {
+        let text = text.trim();
+        if !text.is_empty() {
+            search = Some(text.to_string());
+        }
+    }
+
+    if let Some(min_price) = query.min_price
+        && min_price < 0
+    {
+        return Err(AppError::Validation(
+            "min_price cannot be negative".to_string(),
+        ));
+    }
+
+    if let Some(max_price) = query.max_price
+        && max_price < 0
+    {
+        return Err(AppError::Validation(
+            "max_price cannot be negative".to_string(),
+        ));
+    }
+
+    if let Some(min_price) = query.min_price
+        && let Some(max_price) = query.max_price
+        && min_price > max_price
+    {
+        return Err(AppError::Validation(
+            "min_price cannot be greater than max_price".to_string(),
+        ));
+    }
+
+    Ok(ProductFilter {
+        search,
+        category_id: query.category_id,
+        min_price: query.min_price,
+        max_price: query.max_price,
+    })
 }
 
 async fn get_product(

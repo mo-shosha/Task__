@@ -2,7 +2,10 @@ use cornucopia::queries::products as queries;
 use deadpool_postgres::{Object, Pool};
 use shared::{AppError, AppResult};
 
-use crate::domain::{Product, ProductDetails, ProductImage, ProductInput, ProductListItem};
+use crate::domain::{
+    Pagination, Product, ProductDetails, ProductFilter, ProductImage, ProductInput,
+    ProductListItem, ProductPage,
+};
 
 #[derive(Clone)]
 pub struct ProductRepository {
@@ -41,11 +44,35 @@ impl ProductRepository {
             .map_err(AppError::database)
     }
 
-    pub async fn list(&self) -> AppResult<Vec<ProductListItem>> {
+    pub async fn list(
+        &self,
+        filter: &ProductFilter,
+        pagination: &Pagination,
+    ) -> AppResult<ProductPage> {
         let client = self.client().await?;
 
-        queries::get_products()
-            .bind(&client)
+        let total_items = queries::count_products()
+            .bind(
+                &client,
+                &filter.search,
+                &filter.category_id,
+                &filter.min_price,
+                &filter.max_price,
+            )
+            .one()
+            .await
+            .map_err(AppError::internal)?;
+
+        let items = queries::get_products()
+            .bind(
+                &client,
+                &filter.search,
+                &filter.category_id,
+                &filter.min_price,
+                &filter.max_price,
+                &pagination.page_size,
+                &pagination.offset(),
+            )
             .map(|row| ProductListItem {
                 product: Product {
                     id: row.id,
@@ -59,7 +86,9 @@ impl ProductRepository {
             })
             .all()
             .await
-            .map_err(AppError::internal)
+            .map_err(AppError::internal)?;
+
+        Ok(ProductPage { items, total_items })
     }
 
     pub async fn find(&self, id: i64) -> AppResult<Option<ProductDetails>> {

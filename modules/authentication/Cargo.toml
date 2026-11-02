@@ -1,0 +1,20 @@
+[package]
+name = "module-authentication"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tokio-postgres.workspace = true
+deadpool-postgres.workspace = true
+cornucopia.workspace = true
+shared.workspace = true
+argon2.workspace = true
+rand.workspace = true
+jsonwebtoken.workspace = true
+sha2.workspace = true
+base64.workspace = true
+chrono.workspace = true
+uuid.workspace = true
